@@ -79,6 +79,7 @@
   }
   .obtn:hover{border-color:var(--neon2);color:var(--neon2)}
   .obtn.primary{border-color:var(--neon3);color:var(--neon3)}
+  .hint{color:var(--muted);font-size:13px;margin:-4px 0 10px}
   .frame{flex:1;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#000}
   .frame iframe{width:100%;height:100%;border:0;display:block}
 
@@ -121,6 +122,14 @@
        Say hi: <a href="https://x.com/urs69141" target="_blank" rel="noopener">@urs69141</a>.</p>
   </div>
 
+  <div class="strip">
+    <h3>I wrote up everything that was broken on my own store pages</h3>
+    <p>Six of thirteen games had no tags at all. Two pages were showing my own draft notes.
+       It is short, specific and entirely true, and it is
+       <a href="https://facelessmarius.gumroad.com/l/jawztl" target="_blank" rel="noopener">pay what you want</a>
+       — zero is fine.</p>
+  </div>
+
   <footer>
     <a href="https://spectapor.itch.io/" target="_blank" rel="noopener">itch.io</a>
     <a href="https://x.com/urs69141" target="_blank" rel="noopener">X</a>
@@ -137,6 +146,7 @@
     <a class="obtn primary" id="oitch" target="_blank" rel="noopener">Rate it on itch.io ↗</a>
     <button class="obtn" id="oclose">Close ✕</button>
   </div>
+  <div class="hint" id="ohint">Loading… big games take a few seconds. If it stays black, click once inside the frame.</div>
   <div class="frame"><iframe id="oframe" allowfullscreen allow="autoplay; fullscreen; gamepad; microphone"></iframe></div>
 </div>
 
@@ -144,7 +154,7 @@
 const IMG = "https://img.itch.zone/";
 const GAMES = [
   {s:"mageskrik", n:"MAGESKRIK", e:18515363,
-   d:"Survival roguelite where you run a night-market food stall and the customers bite back.",
+   d:"You are a walking food truck. The night market is starving. Feed them, or be eaten.",
    c:"aW1nLzI4NzU0MDU4LmpwZw==/315x250%23c/CQbpgT.jpg"},
 
   {s:"air-hockey-esport-edition", n:"Air Hockey — Esport Edition", e:18286307,
