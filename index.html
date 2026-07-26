@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spectapor Arcade — free browser games, no download</title>
-<meta name="description" content="Eleven small 3D games you can play right now in a browser tab. No download, no install, no account. Made by a solo dev in Norway.">
+<meta name="description" content="Twelve small 3D games you can play right now in a browser tab. No download, no install, no account. Made by a solo dev in Norway.">
 <meta property="og:title" content="Spectapor Arcade">
-<meta property="og:description" content="Eleven small games you can play right now in a browser tab. No download, no install, no account.">
+<meta property="og:description" content="Twelve small games you can play right now in a browser tab. No download, no install, no account.">
 <meta property="og:type" content="website">
 <style>
   :root{
@@ -103,7 +103,7 @@
 <div class="wrap">
   <header>
     <h1 class="logo">SPECTAPOR</h1>
-    <p class="tag">Eleven small games. They run in this tab, right now.
+    <p class="tag">Twelve small games. They run in this tab, right now.
        No download, no install, no account.</p>
     <div class="badges">
       <span class="badge">Free to play</span>
@@ -157,6 +157,10 @@ const GAMES = [
    d:"You are a walking food truck. The night market is starving. Feed them, or be eaten.",
    c:"aW1nLzI4NzU0MDU4LmpwZw==/315x250%23c/CQbpgT.jpg"},
 
+  {s:"systole-slalom", n:"Systole Slalom", e:18366521,
+   d:"You are a white blood cell surfing an artery. One button. Press on the heartbeat.",
+   c:""},
+
   {s:"air-hockey-esport-edition", n:"Air Hockey — Esport Edition", e:18286307,
    d:"Share a 6-letter room code and play air hockey against anyone, anywhere.",
    c:"aW1nLzI4NDE3MTgxLmpwZw==/315x250%23c/o637c4.jpg"},
@@ -205,7 +209,7 @@ GAMES.forEach(g=>{
   el.className = 'card';
   el.tabIndex = 0;
   el.innerHTML =
-    '<div class="thumb" style="background-image:url(\'' + IMG + g.c + '\')"></div>' +
+    (g.c ? '<div class="thumb" style="background-image:url(\'' + IMG + g.c + '\')"></div>' : '<div class="thumb" style="background:linear-gradient(160deg,#0a1030,#12224a)"></div>') +
     '<div class="body">' +
       '<div class="name"></div>' +
       '<div class="desc"></div>' +
