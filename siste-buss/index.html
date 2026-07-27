@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07070c">
+<title>Siste Buss - The Last Bus</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#07070c;
+    -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
+  canvas{display:block;cursor:pointer}
+  #dev{position:fixed;bottom:6px;right:8px;color:#0f0;font:12px ui-monospace,monospace;display:none;z-index:9}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas><div id="dev"></div>
+<script type="module">
+/* SISTE BUSS - single file build. Same code as the modular build, inlined. */
+// Every player-visible string. Zero literals in game code.
+// Switching language is a data change, not a code change.
+const STR = {
+  lang: "en",
+
+  title: "SISTE BUSS",
+  subtitle: "THE LAST BUS",
+  tagline1: "You drive the last bus of the night.",
+  tagline2: "Every passenger tells you one thing. Not all of them are true.",
+  play: "DRIVE",
+  controlsHint: "Hold anywhere to brake. That is the whole thing.",
+  version: "Spectapor  ·  v1.0",
+
+  fuel: "FUEL",
+  stopCounter: (n, total) => "STOP " + n + " / " + total,
+  doors: "DOORS",
+  waiting: "SOMEONE IS WAITING",
+  checkPrompt: "CHECK?",
+  boarded: (name) => name + " BOARDED",
+  nobodyGotOff: "NOBODY GOT OFF",
+  somethingGotOff: "SOMETHING GOT OFF",
+  contradiction: "CONTRADICTION",
+  refuelled: "+25 FUEL",
+  holdToBrake: "HOLD TO BRAKE",
+
+  paused: "PAUSED",
+  resume: "BACK TO THE ROAD",
+  pauseHint: "Hold anywhere to brake  ·  ESC to pause  ·  M to mute",
+  muted: "SOUND OFF",
+  unmuted: "SOUND ON",
+
+  depotTitle: "THE DEPOT",
+  depotLine: (n) => "You made it. " + n + (n === 1 ? " fare delivered." : " fares delivered."),
+  depotShade: "Something came in with you.",
+  emptyTitle: "THE NIGHT ENDS HERE",
+  emptyLine: (stop, total, fares) =>
+    "Stop " + stop + " of " + total + ". " + fares + (fares === 1 ? " fare aboard." : " fares aboard."),
+  itWas: (name) => "IT WAS " + name + ".",
+  neverBoarded: "You drove past it. It is still standing there.",
+  putOff: "You put it off the bus.",
+  itWasNobody: "THERE WAS NOBODY EXTRA TONIGHT.",
+  score: (n) => "SCORE " + n,
+  best: (n) => "BEST " + n,
+  again: "DRIVE AGAIN",
+  againHint: "Press R",
+
+  stops: [
+    "TORGET", "SYKEHUSET", "BRUA", "RUNDKJØRINGEN", "VERKSTEDET", "KIRKEGÅRDEN",
+    "NORDRE ALLÉ", "HAVNA", "SKOLEN", "UNDER BROA", "SISTE SVING", "DEPOTET"
+  ],
+
+  // id, display name, testimony, fare value, clash partner id (null = unpairable)
+  people: [
+    { id: 0, name: "THE NURSE",   line: "I came off shift at eleven. The hospital lights were still on.", fare: 3, clash: 4 },
+    { id: 1, name: "THE BOY",     line: "There are nine of us tonight. I counted.",                       fare: 2, clash: 7 },
+    { id: 2, name: "THE DRUNK",   line: "Nobody got on at the bridge. Nobody ever does.",                 fare: 2, clash: 6 },
+    { id: 3, name: "THE CLERK",   line: "I have been on this bus since the first stop.",                  fare: 3, clash: 8 },
+    { id: 4, name: "THE SINGER",  line: "The hospital closed in March. I sang at the closing.",           fare: 3, clash: 0 },
+    { id: 5, name: "THE DRIVER",  line: "I drive the other bus. There is no other bus.",                  fare: 4, clash: null },
+    { id: 6, name: "THE WIDOW",   line: "I got on at the bridge. You looked right at me.",                fare: 3, clash: 2 },
+    { id: 7, name: "THE STUDENT", line: "There are seven of us. I counted twice.",                        fare: 2, clash: 1 },
+    { id: 8, name: "THE PRIEST",  line: "Nobody has been on since the first stop. I would have seen.",    fare: 3, clash: 3 },
+    { id: 9, name: "THE STRANGER",line: "I have nothing to tell you.",                                    fare: 5, clash: null }
+  ]
+};
+
+// SISTE BUSS / THE LAST BUS - Spectapor Game Studios
+// STYLE FORMULA (embedded, byte-identical, governs all procedural art below):
+// Hand-inked flat vector night scene with heavy solid black fills and soft lamp-glow falloff;
+// silhouette shapes with no interior detail, clean rounded edges and a thin bright rim-light on
+// every lit contour; environment in near-black charcoal and deep blue-black, the bus and its
+// windows in cold pale blue-white so it separates from the city, waiting figures and all signal
+// elements marked in warm sodium amber; lonely rain-wet after-midnight mood lit only by street
+// lamps; high contrast between game elements and backgrounds, clean readable silhouettes,
+// consistent side-view perspective across all assets.
+
+
+
+/* ---------- palette (STYLE FORMULA block 3) ---------- */
+const C = {
+  sky:      "#07070c",
+  farCity:  "#0b0d16",
+  nearCity: "#05060b",
+  road:     "#090910",
+  kerb:     "#141622",
+  amber:    "#ffb03a",
+  amberDim: "rgba(255,176,58,",
+  glass:    "#cfe8ff",
+  ink:      "#f2f2f7",
+  warn:     "#ff2d78",
+  dim:      "#7d7d92"
+};
+
+/* ---------- frozen agency metrics (design system 5.3) ---------- */
+const M = {
+  CRUISE: 175, ACCEL: 240, DECEL: 340, CRAWL: 55,
+  STOP_GAP: 1500, ZONE: 130, STOP_SPEED: 70,
+  FUEL_MAX: 100, DRAIN: 0.36, BRAKE_DRAIN: 1.2, DOOR_COST: 3,
+  SHADE_MULT: 1.9, REFUEL: 30,
+  STOPS: 12, VERKSTED: 4, DEPOT: 11,
+  DOOR_OPEN_T: 0.35, DOOR_HOLD_T: 0.75, DOOR_SHUT_T: 0.35,
+  BUS_X: 0.30, ROAD_Y: 0.74, SEE_AHEAD: 700
+};
+const PAIRS = [[0, 4], [1, 7], [2, 6], [3, 8]];
+
+/* ---------- seeded RNG (determinism, design system 12.1) ---------- */
+let _s = 1;
+function seed(n) { _s = (n >>> 0) || 1; }
+function rnd() { _s ^= _s << 13; _s ^= _s >>> 17; _s ^= _s << 5; _s >>>= 0; return _s / 4294967296; }
+function ri(n) { return Math.floor(rnd() * n); }
+function shuffled(a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = ri(i + 1); const t = b[i]; b[i] = b[j]; b[j] = t; } return b; }
+
+/* ================= AUDIO - all synthesised, no files ================= */
+const A = {
+  ctx: null, master: null, muted: false, ready: false,
+  engOsc: null, engFilt: null, engGain: null, rainGain: null,
+  pads: [], padGains: [], padFilt: null, plucksAt: 0,
+
+  init() {
+    if (this.ready) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const c = new AC(); this.ctx = c;
+    this.master = c.createGain(); this.master.gain.value = 0.9; this.master.connect(c.destination);
+
+    // engine hum: saw through a lowpass that tracks speed
+    this.engGain = c.createGain(); this.engGain.gain.value = 0.0;
+    this.engFilt = c.createBiquadFilter(); this.engFilt.type = "lowpass"; this.engFilt.frequency.value = 220;
+    this.engOsc = c.createOscillator(); this.engOsc.type = "sawtooth"; this.engOsc.frequency.value = 44;
+    this.engOsc.connect(this.engFilt); this.engFilt.connect(this.engGain); this.engGain.connect(this.master);
+    this.engOsc.start();
+
+    // rain bed: filtered noise loop
+    const n = c.createBufferSource(); n.buffer = this.noise(3); n.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 2600; bp.Q.value = 0.35;
+    this.rainGain = c.createGain(); this.rainGain.gain.value = 0.028;
+    n.connect(bp); bp.connect(this.rainGain); this.rainGain.connect(this.master); n.start();
+
+    // music pad: one voice per passenger aboard
+    this.padFilt = c.createBiquadFilter(); this.padFilt.type = "lowpass"; this.padFilt.frequency.value = 700;
+    this.padFilt.connect(this.master);
+    const lfo = c.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.06;
+    const lg = c.createGain(); lg.gain.value = 180;
+    lfo.connect(lg); lg.connect(this.padFilt.frequency); lfo.start();
+    const freqs = [110, 164.81, 220, 261.63, 329.63, 493.88, 587.33];
+    for (let i = 0; i < freqs.length; i++) {
+      const o = c.createOscillator(); o.type = i < 3 ? "triangle" : "sine"; o.frequency.value = freqs[i];
+      const d = c.createOscillator(); d.type = "sine"; d.frequency.value = freqs[i] * 1.004;
+      const g = c.createGain(); g.gain.value = 0;
+      o.connect(g); d.connect(g); g.connect(this.padFilt);
+      o.start(); d.start();
+      this.pads.push(o); this.padGains.push(g);
+    }
+    this.ready = true;
+  },
+  noise(sec) {
+    const c = this.ctx, len = Math.floor(c.sampleRate * sec);
+    const b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return b;
+  },
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.9; },
+  speed(v) {
+    if (!this.ready) return;
+    const t = v / M.CRUISE;
+    this.engOsc.frequency.setTargetAtTime(38 + t * 34, this.ctx.currentTime, 0.15);
+    this.engFilt.frequency.setTargetAtTime(150 + t * 420, this.ctx.currentTime, 0.2);
+    this.engGain.gain.setTargetAtTime(0.012 + t * 0.05, this.ctx.currentTime, 0.2);
+  },
+  roster(n) {
+    if (!this.ready) return;
+    for (let i = 0; i < this.padGains.length; i++) {
+      const on = i < n ? (i === 0 ? 0.035 : 0.020) : 0;
+      this.padGains[i].gain.setTargetAtTime(on, this.ctx.currentTime, 1.4);
+    }
+  },
+  silencePads() { if (this.ready) for (const g of this.padGains) g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.6); },
+  hiss(dur, f0, f1, vol) {
+    if (!this.ready) return;
+    const c = this.ctx, t = c.currentTime;
+    const s = c.createBufferSource(); s.buffer = this.noise(dur + 0.05);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(bp); bp.connect(g); g.connect(this.master); s.start(t); s.stop(t + dur + 0.05);
+  },
+  tone(freq, dur, vol, type) {
+    if (!this.ready) return;
+    const c = this.ctx, t = c.currentTime;
+    const o = c.createOscillator(); o.type = type || "sine"; o.frequency.value = freq;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.02);
+  },
+  brake() { this.hiss(0.45, 2600, 700, 0.10); },
+  door() { this.hiss(0.55, 900, 2200, 0.09); this.tone(88, 0.16, 0.06, "square"); },
+  board() { this.tone(587.33, 0.28, 0.055); setTimeout(() => this.tone(880, 0.34, 0.045), 130); },
+  clash() { this.tone(58.27, 1.7, 0.10, "triangle"); this.tone(87.31, 1.4, 0.05, "sine"); },
+  lowFuel() { this.tone(49, 0.45, 0.10, "sine"); },
+  refuel() { this.tone(330, 0.2, 0.05); setTimeout(() => this.tone(494, 0.3, 0.05), 150); },
+  pluck(now) {
+    if (!this.ready || now < this.plucksAt) return;
+    this.plucksAt = now + 4 + Math.random() * 5;
+    const notes = [440, 493.88, 523.25, 659.25, 587.33];
+    this.tone(notes[Math.floor(Math.random() * notes.length)], 1.9, 0.028, "sine");
+  }
+};
+
+/* ================= RUN STATE ================= */
+const S = {
+  phase: "title",           // title | drive | doors | end
+  x: 0, speed: 0, fuel: M.FUEL_MAX,
+  stops: [], aboard: [], shadeAboard: false, shadePerson: -1, shadeBoarded: false, shadeRemoved: false,
+  nextStop: 0, doorT: 0, doorPhase: 0, doorStop: -1, doorDone: false,
+  toast: "", toastT: 0, toastWarn: false,
+  sub: "", subT: 0,
+  clashT: 0, seenPairs: 0, evidence: false,
+  refuelled: false, lowFuelFired: false,
+  endWin: false, score: 0, best: 0,
+  lamps: [], farCity: [], nearCity: [], rain: [],
+  t: 0, taught: false
+};
+
+function buildRun() {
+  seed((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
+
+  // route: which stops have someone waiting.
+  // Three stops are always empty so a check is always possible, and SISTE SVING (the last
+  // stop before the depot) is always one of them - there is always a last chance to check.
+  const eligible = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10];
+  const empties = [10, [7, 8, 9][ri(3)], [1, 2, 3][ri(3)]];
+  const withFigure = eligible.filter(i => empties.indexOf(i) < 0);
+
+  // lineup: guarantee at least one complete clash pair so evidence is reachable
+  const pair = PAIRS[ri(PAIRS.length)];
+  const lineup = [pair[0], pair[1]];
+  const rest = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter(i => i !== pair[0] && i !== pair[1]));
+  for (let i = 0; i < 5; i++) lineup.push(rest[i]);
+  const order = shuffled(lineup);
+  const shadeSlot = ri(order.length);
+
+  S.stops.length = 0;
+  let f = 0;
+  for (let i = 0; i < M.STOPS; i++) {
+    const has = withFigure.indexOf(i) >= 0;
+    S.stops.push({
+      i, x: (i + 1) * M.STOP_GAP,
+      person: has ? order[f] : -1,
+      shade: has && f === shadeSlot,
+      resolved: false, sway: rnd() * 6.28
+    });
+    if (has) f++;
+  }
+  S.shadePerson = order[shadeSlot];
+
+  // lamps: dense early, sparse after Kirkegarden (the route gets darker)
+  S.lamps.length = 0;
+  const darkFrom = S.stops[5].x;
+  for (let x = 240; x < (M.STOPS + 1) * M.STOP_GAP; x += (x < darkFrom ? 330 : 700)) S.lamps.push(x);
+  for (const st of S.stops) S.lamps.push(st.x + 60);
+  S.lamps.sort((a, b) => a - b);
+
+  // parallax silhouettes
+  S.farCity.length = 0;
+  for (let x = 0; x < 3200; ) { const w = 46 + ri(90), h = 40 + ri(130); S.farCity.push(x, w, h); x += w + 4 + ri(26); }
+  S.nearCity.length = 0;
+  for (let x = 0; x < 3200; ) {
+    const w = 90 + ri(150), h = 110 + ri(230), lit = ri(4) === 0 ? 1 : 0;
+    S.nearCity.push(x, w, h, lit, ri(1000)); x += w + 10 + ri(40);
+  }
+  S.rain.length = 0;
+  for (let i = 0; i < 90; i++) S.rain.push(rnd(), rnd(), 0.5 + rnd());
+
+  S.x = 0; S.speed = 0; S.fuel = M.FUEL_MAX;
+  S.aboard.length = 0; S.shadeAboard = false; S.shadeBoarded = false; S.shadeRemoved = false;
+  S.nextStop = 0; S.doorPhase = 0; S.doorStop = -1; S.doorDone = false;
+  S.toast = ""; S.toastT = 0; S.sub = ""; S.subT = 0; S.clashT = 0;
+  S.seenPairs = 0; S.evidence = false; S.refuelled = false; S.lowFuelFired = false;
+  S.taught = false; S.t = 0;
+  A.roster(0);
+}
+
+function boardPerson(pid, isShade) {
+  S.aboard.push(pid);
+  if (isShade) { S.shadeAboard = true; S.shadeBoarded = true; }
+  const p = STR.people[pid];
+  S.sub = p.line; S.subT = 4.6;
+  toast(STR.boarded(p.name), false);
+  A.board();
+  A.roster(S.aboard.length);
+  for (let k = 0; k < PAIRS.length; k++) {
+    if ((S.seenPairs >> k) & 1) continue;
+    if (S.aboard.indexOf(PAIRS[k][0]) >= 0 && S.aboard.indexOf(PAIRS[k][1]) >= 0) {
+      S.seenPairs |= (1 << k); S.evidence = true; S.clashT = 2.8; A.clash();
+    }
+  }
+}
+function toast(text, warn) { S.toast = text; S.toastT = 2.2; S.toastWarn = !!warn; }
+
+function endRun(win) {
+  S.phase = "end"; S.endWin = win;
+  let fares = 0;
+  for (const id of S.aboard) if (!(S.shadeAboard && id === S.shadePerson)) fares += STR.people[id].fare;
+  S.fares = fares;
+  let sc = fares * 10 + Math.round(Math.max(0, S.fuel));
+  if (S.shadeAboard) sc -= 60;
+  S.score = Math.max(0, sc);
+  if (S.score > S.best) S.best = S.score;
+  A.silencePads(); A.speed(0);
+}
+
+/* ================= UPDATE ================= */
+function update(dtMs, cmds) {
+  const dt = dtMs / 1000;
+  S.t += dt;
+  if (S.phase !== "drive" && S.phase !== "doors") return;
+
+  const braking = cmds.has("action");
+
+  if (S.phase === "doors") {
+    S.doorT += dt;
+    const st = S.stops[S.doorStop];
+    if (S.doorPhase === 0 && S.doorT >= M.DOOR_OPEN_T) { S.doorPhase = 1; S.doorT = 0; }
+    else if (S.doorPhase === 1 && S.doorT >= M.DOOR_HOLD_T) {
+      if (!S.doorDone) {
+        S.doorDone = true;
+        if (st.person >= 0) boardPerson(st.person, st.shade);
+        else if (st.i === M.VERKSTED) {
+          if (!S.refuelled) { S.fuel = Math.min(M.FUEL_MAX, S.fuel + M.REFUEL); S.refuelled = true; toast(STR.refuelled, false); A.refuel(); }
+          if (S.shadeAboard) { S.shadeAboard = false; S.shadeRemoved = true; toast(STR.somethingGotOff, true); A.clash(); }
+        } else {
+          if (S.shadeAboard) { S.shadeAboard = false; S.shadeRemoved = true; toast(STR.somethingGotOff, true); A.clash(); }
+          else toast(STR.nobodyGotOff, false);
+        }
+      }
+      S.doorPhase = 2; S.doorT = 0; A.door();
+    }
+    else if (S.doorPhase === 2 && S.doorT >= M.DOOR_SHUT_T) { S.phase = "drive"; st.resolved = true; }
+    S.fuel -= M.DRAIN * (S.shadeAboard ? M.SHADE_MULT : 1) * dt;
+  } else {
+    if (braking) S.speed = Math.max(M.CRAWL, S.speed - M.DECEL * dt);
+    else S.speed = Math.min(M.CRUISE, S.speed + M.ACCEL * dt);
+    S.x += S.speed * dt;
+    S.fuel -= (M.DRAIN * (S.shadeAboard ? M.SHADE_MULT : 1) + (braking ? M.BRAKE_DRAIN : 0)) * dt;
+
+    while (S.nextStop < M.STOPS && S.x > S.stops[S.nextStop].x + M.ZONE) { S.stops[S.nextStop].resolved = true; S.nextStop++; }
+    const st = S.stops[S.nextStop];
+    if (st && !st.resolved && Math.abs(S.x - st.x) < M.ZONE && S.speed < M.STOP_SPEED && braking) {
+      if (st.i === M.DEPOT) { endRun(true); return; }
+      S.phase = "doors"; S.doorPhase = 0; S.doorT = 0; S.doorStop = st.i; S.doorDone = false;
+      S.fuel -= M.DOOR_COST; A.door();
+    }
+    if (S.x > S.stops[M.DEPOT].x + M.ZONE) { endRun(true); return; }
+  }
+
+  A.speed(S.speed); A.pluck(S.t);
+  if (S.fuel <= 20 && !S.lowFuelFired) { S.lowFuelFired = true; A.lowFuel(); }
+  if (S.fuel <= 0) { S.fuel = 0; endRun(false); return; }
+
+  if (S.toastT > 0) S.toastT -= dt;
+  if (S.subT > 0) S.subT -= dt;
+  if (S.clashT > 0) S.clashT -= dt;
+}
+
+/* ================= DRAW HELPERS ================= */
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
+}
+
+function drawFigure(g, sx, roadY, pid, isShade, lit, sway, scale) {
+  const s = scale, h = 96 * s;
+  const bob = Math.sin(sway) * (pid === 9 ? 0 : 1.6);   // the stranger never sways
+  const y = roadY + bob;
+  g.save(); g.translate(sx, y);
+  g.fillStyle = "#000";
+  // legs
+  g.fillRect(-5 * s, -34 * s, 4 * s, 34 * s);
+  g.fillRect(2 * s, -34 * s, 4 * s, 34 * s);
+  // body
+  const lean = pid === 2 ? 5 * s : 0;                    // the drunk leans
+  g.save(); g.translate(0, -34 * s); g.rotate(lean * 0.02);
+  const coat = (pid === 4 || pid === 9 || pid === 6) ? 1.25 : 1;
+  roundRect(g, -9 * s * coat, -36 * s, 18 * s * coat, 38 * s, 5 * s); g.fill();
+  if (pid === 7) { roundRect(g, -14 * s, -30 * s, 8 * s, 20 * s, 3 * s); g.fill(); }   // backpack
+  if (pid === 3) { g.fillRect(10 * s, -14 * s, 11 * s, 9 * s); }                        // briefcase
+  // head
+  g.beginPath(); g.arc(0, -46 * s, 8 * s, 0, 6.2832); g.fill();
+  if (pid === 0) { roundRect(g, -9 * s, -56 * s, 18 * s, 6 * s, 2 * s); g.fill(); }     // nurse cap
+  if (pid === 5) { roundRect(g, -10 * s, -55 * s, 20 * s, 5 * s, 2 * s); g.fill(); g.fillRect(-13 * s, -52 * s, 10 * s, 3 * s); } // peaked cap
+  if (pid === 9) { roundRect(g, -13 * s, -56 * s, 26 * s, 4 * s, 2 * s); g.fill(); roundRect(g, -8 * s, -64 * s, 16 * s, 9 * s, 3 * s); g.fill(); } // hat
+  if (pid === 6) { roundRect(g, -10 * s, -54 * s, 20 * s, 14 * s, 7 * s); g.fill(); }   // headscarf
+  if (pid === 8) { g.fillStyle = C.ink; g.fillRect(-3 * s, -38 * s, 6 * s, 3 * s); g.fillStyle = "#000"; } // collar
+  // rim-light: the one tell. A shade never catches the lamp.
+  if (lit > 0.02 && !isShade) {
+    g.strokeStyle = C.amberDim + (0.85 * lit) + ")"; g.lineWidth = 1.6 * s;
+    g.beginPath(); g.arc(0, -46 * s, 8 * s, -2.5, -0.4); g.stroke();
+    g.beginPath(); g.moveTo(-9 * s * coat, -34 * s); g.lineTo(-9 * s * coat, -2 * s); g.stroke();
+  }
+  g.restore();
+  g.restore();
+  return h;
+}
+
+function drawBus(g, x, roadY, doorOpen, lightsOn) {
+  const w = 300, h = 108;
+  const y = roadY - h - 16;
+  g.save(); g.translate(x - w * 0.5, y);
+  // headlight cone on the road ahead
+  if (lightsOn) {
+    const grd = g.createRadialGradient(w + 6, h - 26, 4, w + 6, h - 26, 300);
+    grd.addColorStop(0, "rgba(207,232,255,0.20)"); grd.addColorStop(1, "rgba(207,232,255,0)");
+    g.fillStyle = grd; g.beginPath(); g.moveTo(w, h - 34); g.lineTo(w + 330, h + 26); g.lineTo(w + 330, h + 44); g.lineTo(w, h - 14); g.closePath(); g.fill();
+  }
+  // body silhouette
+  g.fillStyle = "#000"; roundRect(g, 0, 0, w, h, 12); g.fill();
+  // windows, cold pale blue-white so the bus separates from the city
+  g.fillStyle = C.glass;
+  const wy = 16, wh = 34;
+  g.globalAlpha = 0.92;
+  roundRect(g, 16, wy, 52, wh, 4); g.fill();
+  if (doorOpen < 0.5) { roundRect(g, 76, wy, 40 - doorOpen * 40, wh, 4); g.fill(); }
+  roundRect(g, 126, wy, 52, wh, 4); g.fill();
+  roundRect(g, 186, wy, 52, wh, 4); g.fill();
+  roundRect(g, 246, wy, 38, wh, 4); g.fill();
+  g.globalAlpha = 1;
+  // door gap: light spills out when open
+  if (doorOpen > 0.01) {
+    g.fillStyle = "rgba(207,232,255," + (0.30 * doorOpen) + ")";
+    g.fillRect(76, wy, 40, h - wy - 18);
+    g.fillStyle = "rgba(207,232,255," + (0.10 * doorOpen) + ")";
+    g.beginPath(); g.moveTo(76, h - 18); g.lineTo(116, h - 18); g.lineTo(150, h + 42); g.lineTo(44, h + 42); g.closePath(); g.fill();
+  }
+  // destination blind
+  g.fillStyle = C.amber; g.globalAlpha = 0.85; g.fillRect(232, 6, 52, 7); g.globalAlpha = 1;
+  // rim-light along the roof and nose
+  g.strokeStyle = "rgba(207,232,255,0.5)"; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(10, 1); g.lineTo(w - 10, 1); g.stroke();
+  g.beginPath(); g.moveTo(w - 1, 8); g.lineTo(w - 1, h - 22); g.stroke();
+  // wheels
+  g.fillStyle = "#000";
+  g.beginPath(); g.arc(64, h + 6, 20, 0, 6.2832); g.fill();
+  g.beginPath(); g.arc(236, h + 6, 20, 0, 6.2832); g.fill();
+  g.strokeStyle = "rgba(125,125,146,0.5)"; g.lineWidth = 1.2;
+  g.beginPath(); g.arc(64, h + 6, 20, 0, 6.2832); g.stroke();
+  g.beginPath(); g.arc(236, h + 6, 20, 0, 6.2832); g.stroke();
+  // headlight
+  g.fillStyle = C.glass; roundRect(g, w - 12, h - 40, 10, 12, 3); g.fill();
+  g.restore();
+}
+
+function lampLight(worldX) {
+  // brightness at a world position from the nearest lamp (drives the rim-light tell)
+  let best = 0;
+  for (let i = 0; i < S.lamps.length; i++) {
+    const d = Math.abs(S.lamps[i] - worldX);
+    if (d < 230) { const v = 1 - d / 230; if (v > best) best = v; }
+    if (S.lamps[i] > worldX + 240) break;
+  }
+  return best;
+}
+
+/* ================= RENDER ================= */
+function worldScale(W) { return Math.max(0.36, Math.min(1.0, W / 1180)); }
+
+function render(g, Wc, Hc) {
+  const sc = worldScale(Wc);
+  g.fillStyle = C.sky; g.fillRect(0, 0, Wc, Hc);
+  const full = Hc / sc;
+  const H = Math.min(full, 780);            // the world is drawn as a band, not stretched
+  const ty = (full - H) * 0.44;
+  g.save(); g.scale(sc, sc); g.translate(0, ty);
+  const W = Wc / sc;
+  const roadY = H * M.ROAD_Y;
+  const busX = W * M.BUS_X;
+  const camX = S.x - busX;
+
+  // faint horizon lift, the city breathing under the cloud
+  const hz = g.createLinearGradient(0, roadY - 210, 0, roadY - 40);
+  hz.addColorStop(0, "rgba(255,176,58,0)"); hz.addColorStop(1, "rgba(255,176,58,0.020)");
+  g.fillStyle = hz; g.fillRect(0, roadY - 210, W, 170);
+
+  // far skyline
+  g.fillStyle = C.farCity;
+  const fo = (camX * 0.15) % 3200;
+  for (let pass = 0; pass < 2; pass++) {
+    const off = -fo + pass * 3200;
+    for (let i = 0; i < S.farCity.length; i += 3) {
+      const bx = S.farCity[i] + off;
+      if (bx > W + 60 || bx < -200) continue;
+      g.fillRect(bx, roadY - 92 - S.farCity[i + 2], S.farCity[i + 1], S.farCity[i + 2] + 92);
+    }
+  }
+  // near buildings with a few lit windows
+  const no = (camX * 0.45) % 3200;
+  for (let pass = 0; pass < 2; pass++) {
+    const off = -no + pass * 3200;
+    for (let i = 0; i < S.nearCity.length; i += 5) {
+      const bx = S.nearCity[i] + off, bw = S.nearCity[i + 1], bh = S.nearCity[i + 2];
+      if (bx > W + 80 || bx < -260) continue;
+      g.fillStyle = C.nearCity;
+      g.fillRect(bx, roadY - 40 - bh, bw, bh + 40);
+      g.fillStyle = "rgba(125,125,146,0.16)"; g.fillRect(bx, roadY - 40 - bh, bw, 1);
+      if (S.nearCity[i + 3]) {
+        g.fillStyle = C.amberDim + "0.22)";
+        const wseed = S.nearCity[i + 4];
+        for (let k = 0; k < 3; k++) {
+          const wx = bx + 14 + ((wseed * (k + 3)) % Math.max(1, bw - 34));
+          const wy = roadY - 40 - bh + 22 + ((wseed * (k + 7)) % Math.max(1, bh - 60));
+          g.fillRect(wx, wy, 7, 10);
+        }
+      }
+    }
+  }
+
+  // road
+  g.fillStyle = C.road; g.fillRect(0, roadY, W, full);
+  g.fillStyle = "rgba(0,0,0,0.55)"; g.fillRect(0, roadY + 46, W, full);
+  g.strokeStyle = C.kerb; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, roadY + 0.5); g.lineTo(W, roadY + 0.5); g.stroke();
+
+  // lamps and their pools
+  for (let i = 0; i < S.lamps.length; i++) {
+    const sx = S.lamps[i] - camX;
+    if (sx < -120 || sx > W + 120) continue;
+    const topY = roadY - 250;
+    g.strokeStyle = "#000"; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(sx, roadY); g.lineTo(sx, topY); g.lineTo(sx + 34, topY); g.stroke();
+    g.fillStyle = C.amber; roundRect(g, sx + 26, topY - 3, 18, 8, 3); g.fill();
+    const gl = g.createRadialGradient(sx + 35, topY + 3, 2, sx + 35, topY + 3, 132);
+    gl.addColorStop(0, "rgba(255,176,58,0.30)"); gl.addColorStop(0.30, "rgba(255,176,58,0.055)"); gl.addColorStop(1, "rgba(255,176,58,0)");
+    g.fillStyle = gl; g.beginPath(); g.arc(sx + 35, topY + 3, 132, 0, 6.2832); g.fill();
+    const pool = g.createRadialGradient(sx + 35, roadY + 8, 4, sx + 35, roadY + 8, 130);
+    pool.addColorStop(0, "rgba(255,176,58,0.10)"); pool.addColorStop(1, "rgba(255,176,58,0)");
+    g.fillStyle = pool; g.beginPath(); g.ellipse(sx + 35, roadY + 8, 104, 20, 0, 0, 6.2832); g.fill();
+  }
+
+  // stops: sign, then whoever is waiting
+  for (let i = 0; i < M.STOPS; i++) {
+    const st = S.stops[i], sx = st.x - camX;
+    if (sx < -260 || sx > W + 320) continue;
+    g.strokeStyle = "#000"; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(sx - 90, roadY); g.lineTo(sx - 90, roadY - 96); g.stroke();
+    g.fillStyle = "#000"; roundRect(g, sx - 90, roadY - 126, 132, 30, 4); g.fill();
+    g.strokeStyle = C.amberDim + "0.7)"; g.lineWidth = 1.2;
+    roundRect(g, sx - 90, roadY - 126, 132, 30, 4); g.stroke();
+    g.fillStyle = C.amber; g.font = "600 13px ui-monospace,Menlo,Consolas,monospace"; g.textAlign = "center";
+    g.fillText(STR.stops[i], sx - 24, roadY - 106);
+    if (st.person >= 0 && !st.resolved) {
+      drawFigure(g, sx + 34, roadY, st.person, st.shade, lampLight(st.x + 34), S.t * 1.4 + st.sway, 1);
+    }
+  }
+
+  // bus
+  let doorOpen = 0;
+  if (S.phase === "doors") doorOpen = S.doorPhase === 0 ? S.doorT / M.DOOR_OPEN_T : S.doorPhase === 1 ? 1 : 1 - S.doorT / M.DOOR_SHUT_T;
+  drawBus(g, busX, roadY, Math.max(0, Math.min(1, doorOpen)), true);
+
+  // rain in front of everything
+  g.strokeStyle = "rgba(207,232,255,0.10)"; g.lineWidth = 1;
+  g.beginPath();
+  for (let i = 0; i < S.rain.length; i += 3) {
+    const sp = 260 * S.rain[i + 2];
+    const rx = (S.rain[i] * W - (S.t * sp * 0.35 + camX * 1.2) % W + W) % W;
+    const ry = (S.rain[i + 1] * full + S.t * sp) % full - ty;
+    g.moveTo(rx, ry); g.lineTo(rx - 5, ry + 17);
+  }
+  g.stroke();
+
+  // vignette
+  g.restore();
+
+  const ry = (roadY + ty) * sc, bx = busX * sc;
+  const vr = Math.max(Wc, Hc) * 0.80;
+  const vg = g.createRadialGradient(Wc * 0.5, ry - 70 * sc, vr * 0.32, Wc * 0.5, ry - 70 * sc, vr);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.90)");
+  g.fillStyle = vg; g.fillRect(0, 0, Wc, Hc);
+
+  drawHUD(g, Wc, Hc, sc, ry, bx);
+}
+
+function drawHUD(g, W, H, sc, roadY, busX) {
+  g.textAlign = "left";
+  // fuel
+  const fw = Math.min(300, W * 0.32), fx = 22, fy = 26;
+  g.fillStyle = C.dim; g.font = "600 11px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.fuel, fx, fy - 8);
+  g.strokeStyle = "rgba(125,125,146,0.5)"; g.lineWidth = 1;
+  g.strokeRect(fx + 0.5, fy + 0.5, fw, 11);
+  const low = S.fuel <= 20;
+  g.fillStyle = low ? (Math.sin(S.t * 9) > 0 ? C.warn : "rgba(255,45,120,0.45)") : C.amber;
+  g.fillRect(fx + 2, fy + 2, Math.max(0, (fw - 4) * (S.fuel / M.FUEL_MAX)), 7);
+  if (S.shadeAboard) {
+    g.fillStyle = C.warn; g.font = "600 10px ui-monospace,Menlo,Consolas,monospace";
+    g.fillText("▼▼", fx + fw + 8, fy + 10);
+  }
+
+  // stop counter
+  g.textAlign = "right"; g.fillStyle = C.dim; g.font = "600 12px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.stopCounter(Math.min(S.nextStop + 1, M.STOPS), M.STOPS), W - 22, fy + 10);
+
+  // roster down the left edge
+  g.textAlign = "left";
+  for (let i = 0; i < S.aboard.length; i++) {
+    const yy = 78 + i * 26;
+    g.save(); g.translate(34, yy);
+    g.fillStyle = "#000"; g.beginPath(); g.arc(0, -8, 5, 0, 6.2832); g.fill();
+    roundRect(g, -6, -3, 12, 14, 3); g.fill();
+    g.strokeStyle = "rgba(207,232,255,0.35)"; g.lineWidth = 1;
+    g.beginPath(); g.arc(0, -8, 5, -2.5, -0.4); g.stroke();
+    g.restore();
+  }
+
+  // approach prompts
+  const st = S.stops[S.nextStop];
+  if (S.phase === "drive" && st && !st.resolved) {
+    const d = st.x - S.x;
+    if (d < M.SEE_AHEAD && d > -M.ZONE) {
+      g.textAlign = "center"; g.font = "700 13px ui-monospace,Menlo,Consolas,monospace";
+      const a = Math.min(1, (M.SEE_AHEAD - d) / 220);
+      if (st.i === M.DEPOT) { g.fillStyle = C.amberDim + a + ")"; g.fillText(STR.stops[M.DEPOT], W / 2, 64); }
+      else if (st.person >= 0) { g.fillStyle = C.amberDim + a + ")"; g.fillText(STR.waiting, W / 2, 64); }
+      else if (S.evidence || S.shadeAboard) { g.fillStyle = "rgba(255,45,120," + a + ")"; g.fillText(STR.checkPrompt, W / 2, 64); }
+      if (!S.taught && st.i === 0) { g.fillStyle = C.amberDim + (a * 0.9) + ")"; g.fillText(STR.holdToBrake, W / 2, 88); }
+    }
+  }
+  if (S.phase === "doors") {
+    g.textAlign = "center"; g.fillStyle = C.glass; g.font = "700 12px ui-monospace,Menlo,Consolas,monospace";
+    g.fillText(STR.doors, busX, roadY - 150 * sc);
+    S.taught = true;
+  }
+
+  // contradiction
+  if (S.clashT > 0) {
+    const fl = Math.sin(S.clashT * 26) > -0.3 ? 1 : 0.25;
+    g.textAlign = "center"; g.fillStyle = "rgba(255,45,120," + fl + ")";
+    g.font = "800 20px ui-monospace,Menlo,Consolas,monospace";
+    g.fillText(STR.contradiction, W / 2, H - 118);
+  }
+
+  // toast
+  if (S.toastT > 0) {
+    g.textAlign = "center";
+    g.fillStyle = S.toastWarn ? "rgba(255,45,120," + Math.min(1, S.toastT) + ")" : "rgba(255,176,58," + Math.min(1, S.toastT) + ")";
+    g.font = "700 14px ui-monospace,Menlo,Consolas,monospace";
+    g.fillText(S.toast, W / 2, H - 92);
+  }
+
+  // testimony subtitle
+  if (S.subT > 0) {
+    const a = Math.min(1, S.subT / 0.7);
+    g.textAlign = "center"; g.fillStyle = "rgba(242,242,247," + a + ")";
+    g.font = "500 " + Math.max(14, Math.min(19, W / 52)) + "px ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
+    wrapText(g, S.sub, W / 2, H - 52, Math.min(760, W - 60), 24);
+  }
+}
+
+function wrapText(g, text, cx, y, maxW, lh) {
+  const words = text.split(" ");
+  let line = "", lines = [];
+  for (const w of words) {
+    const t = line ? line + " " + w : w;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  for (let i = 0; i < lines.length; i++) g.fillText(lines[i], cx, y - (lines.length - 1 - i) * lh);
+}
+
+/* ================= SCREENS ================= */
+function renderTitle(g, Wc, Hc) {
+  const sc = worldScale(Wc);
+  g.fillStyle = C.sky; g.fillRect(0, 0, Wc, Hc);
+  const full = Hc / sc;
+  const H = Math.min(full, 780);
+  const ty = (full - H) * 0.62;
+  g.save(); g.scale(sc, sc); g.translate(0, ty);
+  const W = Wc / sc;
+  const roadY = H * 0.86;
+  const gl = g.createRadialGradient(W * 0.72, roadY - 210, 4, W * 0.72, roadY - 210, 300);
+  gl.addColorStop(0, "rgba(255,176,58,0.26)"); gl.addColorStop(0.35, "rgba(255,176,58,0.05)"); gl.addColorStop(1, "rgba(255,176,58,0)");
+  g.fillStyle = gl; g.beginPath(); g.arc(W * 0.72, roadY - 210, 300, 0, 6.2832); g.fill();
+  g.strokeStyle = "#000"; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(W * 0.72, roadY); g.lineTo(W * 0.72, roadY - 220); g.lineTo(W * 0.72 - 34, roadY - 220); g.stroke();
+  g.fillStyle = C.amber; roundRect(g, W * 0.72 - 44, roadY - 224, 18, 8, 3); g.fill();
+  g.fillStyle = C.road; g.fillRect(0, roadY, W, full);
+  drawBus(g, W * 0.58, roadY, 0, true);
+
+  const vg = g.createRadialGradient(W * 0.6, roadY - 120, Math.max(W, H) * 0.22, W * 0.6, roadY - 120, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.86)");
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  g.restore();
+
+  const lx = Math.max(28, Wc * 0.08);
+  g.fillStyle = C.amber; g.font = "800 " + Math.min(72, Wc / 11) + "px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.title, lx, Hc * 0.30);
+  g.fillStyle = C.dim; g.font = "600 " + Math.min(20, Wc / 40) + "px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.subtitle, lx, Hc * 0.30 + 30);
+  g.fillStyle = C.ink; g.font = "500 " + Math.min(19, Wc / 46) + "px ui-sans-serif,system-ui,sans-serif";
+  g.fillText(STR.tagline1, lx, Hc * 0.30 + 78);
+  g.fillStyle = C.dim;
+  g.fillText(STR.tagline2, lx, Hc * 0.30 + 106);
+
+  g.fillStyle = C.amber; g.font = "800 22px ui-monospace,Menlo,Consolas,monospace";
+  roundRect(g, lx, Hc * 0.30 + 138, 170, 48, 24); g.strokeStyle = C.amber; g.lineWidth = 2; g.stroke();
+  g.textAlign = "center"; g.fillText(STR.play, lx + 85, Hc * 0.30 + 168);
+  g.textAlign = "left"; g.fillStyle = C.dim; g.font = "500 13px ui-sans-serif,system-ui,sans-serif";
+  g.fillText(STR.controlsHint, lx, Hc * 0.30 + 212);
+  g.fillText(STR.version, lx, Hc - 26);
+}
+
+function renderEnd(g, W, H) {
+  render(g, W, H);
+  g.fillStyle = "rgba(4,4,9,0.88)"; g.fillRect(0, 0, W, H);
+  g.textAlign = "center";
+  const cx = W / 2;
+  g.fillStyle = S.endWin ? C.amber : C.warn;
+  g.font = "800 " + Math.min(44, W / 16) + "px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(S.endWin ? STR.depotTitle : STR.emptyTitle, cx, H * 0.30);
+  g.fillStyle = C.ink; g.font = "500 " + Math.min(18, W / 48) + "px ui-sans-serif,system-ui,sans-serif";
+  g.fillText(S.endWin ? STR.depotLine(S.aboard.length) : STR.emptyLine(Math.min(S.nextStop + 1, M.STOPS), M.STOPS, S.aboard.length), cx, H * 0.30 + 38);
+  g.fillStyle = C.dim; g.font = "600 15px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(S.shadePerson >= 0 ? STR.itWas(STR.people[S.shadePerson].name) : STR.itWasNobody, cx, H * 0.30 + 104);
+  if (S.shadePerson >= 0) {
+    const fy = H * 0.30 + 232;
+    const lg2 = g.createRadialGradient(cx, fy - 60, 4, cx, fy - 60, 130);
+    lg2.addColorStop(0, "rgba(255,176,58,0.20)"); lg2.addColorStop(1, "rgba(255,176,58,0)");
+    g.fillStyle = lg2; g.beginPath(); g.arc(cx, fy - 60, 130, 0, 6.2832); g.fill();
+    drawFigure(g, cx, fy, S.shadePerson, true, 0, 0, 1.25);
+    g.textAlign = "center"; g.fillStyle = C.dim; g.font = "500 12px ui-sans-serif,system-ui,sans-serif";
+    g.fillText(S.shadeAboard ? STR.depotShade : S.shadeRemoved ? STR.putOff : !S.shadeBoarded ? STR.neverBoarded : "", cx, fy + 22);
+  }
+  g.textAlign = "center";
+  g.fillStyle = C.amber; g.font = "800 30px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.score(S.score), cx, H * 0.30 + 300);
+  g.fillStyle = C.dim; g.font = "600 14px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.best(S.best), cx, H * 0.30 + 326);
+  g.fillStyle = C.amber; g.font = "800 18px ui-monospace,Menlo,Consolas,monospace";
+  g.strokeStyle = C.amber; g.lineWidth = 2;
+  roundRect(g, cx - 95, H * 0.30 + 348, 190, 46, 23); g.stroke();
+  g.fillText(STR.again, cx, H * 0.30 + 378);
+  g.fillStyle = C.dim; g.font = "500 12px ui-sans-serif,system-ui,sans-serif";
+  g.fillText(STR.againHint, cx, H * 0.30 + 378);
+}
+
+function renderPause(g, W, H) {
+  render(g, W, H);
+  g.fillStyle = "rgba(4,4,9,0.86)"; g.fillRect(0, 0, W, H);
+  g.textAlign = "center";
+  g.fillStyle = C.amber; g.font = "800 40px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.paused, W / 2, H * 0.42);
+  g.fillStyle = C.ink; g.font = "600 16px ui-monospace,Menlo,Consolas,monospace";
+  g.fillText(STR.resume, W / 2, H * 0.42 + 44);
+  g.fillStyle = C.dim; g.font = "500 13px ui-sans-serif,system-ui,sans-serif";
+  g.fillText(STR.pauseHint, W / 2, H * 0.42 + 78);
+}
+
+/* ================= PUBLIC API ================= */
+const Game = {
+  S, A, M, STR,
+  start() { A.init(); A.resume(); buildRun(); S.phase = "drive"; },
+  phase() { return S.phase; },
+  setPhase(p) { S.phase = p; },
+  toggleMute() { A.setMuted(!A.muted); return A.muted; }
+};
+
+
+
+
+/* ---- input: everything becomes a command object; bindings are physical key codes ---- */
+const BIND = { Space:"action", ArrowDown:"action", KeyS:"action", KeyK:"action" };
+const PAD  = { 0:"action", 1:"action", 6:"action", 7:"action" };
+const held = new Set(), touch = new Set();
+let pausePressed = false, mutePressed = false, retryPressed = false, confirmPressed = false;
+
+addEventListener("keydown", e => {
+  if (e.repeat) { if (BIND[e.code]) e.preventDefault(); return; }
+  const c = BIND[e.code];
+  if (c) { held.add(c); confirmPressed = true; e.preventDefault(); }
+  if (e.code === "Escape") pausePressed = true;
+  if (e.code === "KeyM") mutePressed = true;
+  if (e.code === "KeyR") retryPressed = true;
+  if (e.code === "Enter") confirmPressed = true;
+});
+addEventListener("keyup", e => { const c = BIND[e.code]; if (c) held.delete(c); });
+
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d", { alpha:false });
+function press(e){ touch.add("action"); confirmPressed = true; if (e.cancelable) e.preventDefault(); }
+function release(e){ touch.clear(); if (e.cancelable) e.preventDefault(); }
+canvas.addEventListener("touchstart", press, {passive:false});
+canvas.addEventListener("touchend", release, {passive:false});
+canvas.addEventListener("touchcancel", release, {passive:false});
+canvas.addEventListener("mousedown", press);
+addEventListener("mouseup", release);
+addEventListener("contextmenu", e => e.preventDefault());
+
+let padPrev = false;
+function padCommands(out) {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let any = false;
+  for (const gp of pads) {
+    if (!gp) continue;
+    for (let i = 0; i < gp.buttons.length; i++) {
+      if (gp.buttons[i] && gp.buttons[i].pressed && PAD[i]) { out.add(PAD[i]); any = true; }
+    }
+    if (gp.buttons[9] && gp.buttons[9].pressed) pausePressed = true;
+  }
+  if (any && !padPrev) confirmPressed = true;
+  padPrev = any;
+  return out;
+}
+const cmdSet = new Set();
+function commands(){
+  cmdSet.clear();
+  for (const c of held) cmdSet.add(c);
+  for (const c of touch) cmdSet.add(c);
+  return padCommands(cmdSet);
+}
+
+/* ---- responsive canvas, DPR capped per the performance law ---- */
+const DPR_CAP = 1.5;
+let W = 0, H = 0;
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, DPR_CAP);
+  W = innerWidth; H = innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.textBaseline = "alphabetic";
+}
+addEventListener("resize", resize);
+addEventListener("orientationchange", () => setTimeout(resize, 120));
+resize();
+
+/* ---- fixed-timestep loop ---- */
+const STEP = 1000/60;
+let acc = 0, last = performance.now(), blurred = false, paused = false;
+let frames = 0, fpsAt = last;
+addEventListener("blur", () => { blurred = true; });
+addEventListener("focus", () => { blurred = false; last = performance.now(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) blurred = true; else { blurred = false; last = performance.now(); } });
+
+const dev = new URLSearchParams(location.search).has("dev");
+if (dev) { document.getElementById("dev").style.display = "block"; window.__G = Game; }
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = now - last; last = now;
+  if (dt > 250) dt = STEP;
+  const cmds = commands();
+
+  if (mutePressed) { mutePressed = false; Game.toggleMute(); }
+  const ph = Game.phase();
+
+  if (ph === "title") {
+    if (confirmPressed) { confirmPressed = false; held.clear(); touch.clear(); Game.start(); }
+    renderTitle(ctx, W, H);
+  } else if (ph === "end") {
+    if (confirmPressed || retryPressed) { confirmPressed = false; retryPressed = false; held.clear(); touch.clear(); Game.start(); }
+    renderEnd(ctx, W, H);
+  } else {
+    if (pausePressed) { pausePressed = false; paused = !paused; }
+    if (paused || blurred) {
+      if (confirmPressed) { confirmPressed = false; paused = false; held.clear(); touch.clear(); }
+      renderPause(ctx, W, H);
+    } else {
+      confirmPressed = false; retryPressed = false;
+      acc += dt;
+      let guard = 0;
+      while (acc >= STEP && guard++ < 8) { update(STEP, cmds); acc -= STEP; }
+      if (acc > STEP * 8) acc = 0;
+      render(ctx, W, H);
+    }
+  }
+  confirmPressed = false; retryPressed = false; pausePressed = false;
+
+  if (dev) {
+    frames++;
+    if (now - fpsAt >= 500) {
+      document.getElementById("dev").textContent =
+        Math.round(frames * 1000 / (now - fpsAt)) + " fps  " + (dt).toFixed(1) + " ms";
+      frames = 0; fpsAt = now;
+    }
+  }
+}
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>
